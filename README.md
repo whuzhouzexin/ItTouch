@@ -1,0 +1,2 @@
+# ItTouch
+ItTouch是一个兼容移动端和pc端的滑块类库，修复了IScroller chrome滚动卡顿的问题
