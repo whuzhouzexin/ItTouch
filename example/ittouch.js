@@ -93,8 +93,9 @@
     	if(!_isHtmlNode(dom)) {
     		dom = querySelector('body')
     	}
+		var fn = _once(callback)
     	_addEvent(dom, TRANSITION_END_EVENT, function(e) {
-    		var fn = _once(callback)
+
     		fn(e)
     	}, false)
     }
