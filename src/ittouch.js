@@ -18,7 +18,7 @@
 	// 属性描述器
 	var _getDesriptor = Object.getOwnPropertyDescriptor
 	//slice
-	var slice = [].slice
+	var slice = [].slice;
 	(function() {
 	    var lastTime = 0;
 	    var vendors = ['webkit', 'moz'];
@@ -57,6 +57,10 @@
 	function _isString(str) {
 		return typeof str === 'string'
 	}
+	//ease
+	function reverseEase(y) {
+        return 1 - Math.sqrt(1 - y * y);
+    }
 	//扩展方法
 	function _extend(target, obj) {
 		var opts = slice.call(arguments)
@@ -121,9 +125,11 @@
     	}
 
     	_addEvent(dom, TRANSITION_END_EVENT, function(e) {
-			var fn = _once(callback)
-    		fn(e)
-    	}, false)
+			if(this.container != e.target) {
+				return false
+			}
+			callback()
+    	}.bind(this), true)
     }
 	//判断是不是方法
 	function _isFunction(func) {
@@ -164,9 +170,7 @@
 		return dom['on' + type] = callback
 	}
 	function _removeEvent(dom, type ,callback, isCancerBuble) {
-		if(!_isHtmlNode(dom)) {
-			return false
-		}
+
 		if(!_isString(type)) {
 			return false
 		}
@@ -209,8 +213,7 @@
 
 
 	function _getCubicBezier() {
-
-		return 'linear'
+		return 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
 	}
 
 	/**
@@ -235,29 +238,34 @@
             resizeEvt: 'onorientationchange' in global ? 'orientationchange' : 'resize'
         };
 	}
-	function _addDistination(current, start, distance, time, lowerMargin, wrapperSize, deceleration) {
-
-	    distance = distance
-
+	function _addDistination(current, start, time, deceleration) {
+		var distance = current - start
 		var	speed = Math.abs(distance) / time,
 			destination,
 			duration;
-
-		deceleration = deceleration === undefined ? 0.0006 : deceleration;
+		var tRatio = 1;
+		var deceleration = deceleration === undefined ? 0.0006 : deceleration;
 
 		destination = current + ( speed * speed ) / ( 2 * deceleration ) * ( distance < 0 ? -1 : 1 );
-		duration = speed / deceleration;
-
-		if ( destination < lowerMargin ) {
-			destination = wrapperSize ? lowerMargin - ( wrapperSize / 2.5 * ( speed / 8 ) ) : lowerMargin;
-			distance = Math.abs(destination - current);
-			duration = distance / speed;
-		} else if ( destination > 0 ) {
-			destination = wrapperSize ? wrapperSize / 2.5 * ( speed / 8 ) : 0;
-			distance = Math.abs(current) + destination;
-			duration = distance / speed;
+		duration = Math.round(speed / self.deceleration) * tRatio;
+		if (destination < this.opts.maxScrollY ) {
+			if (destination < this.opts.maxScrollY - this.maxRegion) {
+				tRatio = reverseEase((current - this.opts.maxScrollY + this.springMaxRegion) / (current - destination));
+				destination = this.opts.maxScrollY - this.springMaxRegion;
+			} else {
+				tRatio = reverseEase((current - this.opts.maxScrollY + this.springMaxRegion * (this.opts.maxScrollY - destination) / this.maxRegion) / (current - destination));
+				destination = this.opts.maxScrollY - this.springMaxRegion * (this.opts.maxScrollY - destination) / this.maxRegion;
+			}
+		} else if (destination > this.opts.minScrollY) {
+			if (destination > this.opts.minScrollY + this.maxRegion) {
+				tRatio = reverseEase((this.opts.minScrollY + this.springMaxRegion - current) / (destination - current));
+				destination = this.opts.minScrollY + this.springMaxRegion;
+			} else {
+				tRatio = reverseEase((this.opts.minScrollY + this.springMaxRegion * ( destination-this.opts.minScrollY) / this.maxRegion - current) / (destination - current));
+				destination = this.opts.minScrollY + this.springMaxRegion * (destination - this.opts.minScrollY) / this.maxRegion;
+			}
 		}
-
+		var duration = Math.round(speed / self.deceleration) * tRatio;
 		return {
 			destination: Math.round(destination),
 			duration: duration
@@ -285,7 +293,7 @@
 				isPreventDefault: true,
 				bounceTop: 30,
 				bounceBottom: -30,
-				deceleration: 0.0016,
+				deceleration: 0.0006,
 				isMoment: true,
 				target: global
 			}
@@ -306,133 +314,146 @@
 			this.isSrcoll = false
 			this.containerHeight = this.container.offsetHeight
 			this.containerWidth = this.container.offsetWidth
-			_bindTransitionEnd(this.container, function() {
-				this.isMove = false
-				this.setStyle(this.container, "transitionDuration", '0ms')
-				if(this.move.length) {
-					console.log(this.move);
-					var offsetY = this.move.pop().offsetY
-					this.move = []
-					console.log(offsetY);
-					this.setStyle(this.container,"transitionTimingFunction", "linear")
-					this.setStyle(this.container, "transitionDuration", '100ms')
-					this.translateY(offsetY)
-				}
-			}.bind(this))
+			this.move = []
+			this.maxRegion = this.opts.maxRegion || 600;
+	        this.springMaxRegion = this.opts.springMaxRegion || 60
 			this.wrapperHeight = _getRect(this.container.parentNode).height
 			this.opts.maxScrollY = this.opts.maxScrollY ? this.opts.maxScrollY : (this.wrapperHeight - this.containerHeight)
+			this.touchStartCallback = this.startFn.bind(this)
+			this.touchMoveCallback = this.moveFn.bind(this)
+			this.touchEndCallback = this.endFn.bind(this)
+			this.transitionEndCallback = this.transitionEnd.bind(this)
+			_bindTransitionEnd.call(this, this.container, this.transitionEndCallback)
+		},
+		startFn: function(e) {
+			e.stopPropagation()
+			this.isMove = false
+			this.$touchStartTime = _getTime()
+			this.isSrcoll = false
+			this.isMove = false
+			this.isStart = true
+			this.$touchStartPageY = this.$initPointY = this.eventTypes.hasTouch ? e.touches[0].pageY : e.pageY
+			this.$touchStartPageX = this.$initPointX = this.eventTypes.hasTouch ? e.touches[0].pageY : e.pageX
+			this.initPointY = this.$touchStartPageY
+			this.initPointX = this.$touchStartPageX
+			this.startX = this.offsetX
+			this.startY = this.offsetY
+			this.opts.touchStart(e, this)
+		},
+		moveFn: function(e) {
+			if(this.opts.isPreventDefault) {
+				e.preventDefault()
+				e.stopPropagation()
+			}
+			this.$touchMoveTime = _getTime()
+			this.startMoveGapTime = this.$touchMoveTime - this.$touchStartTime
+			this.$touchMovePageY = this.eventTypes.hasTouch ? e.touches[0].pageY : e.pageY
+			this.$touchMovePageX = this.eventTypes.hasTouch ? e.touches[0].pageY : e.pageX
+			this.$moveGapY = parseInt(this.$touchMovePageY - this.$touchStartPageY)
+			this.$moveGapX = parseInt(this.$touchMovePageX - this.$touchStartPageX)
+			this.$touchStartPageY = this.$touchMovePageY
+			this.$touchStartPageX = this.$touchMovePageX
+			if(!this.isStart) {
+				return false
+			}
+			this.offsetY += this.$moveGapY
+			this.offsetX += this.$moveGapX
+
+			if(Math.abs(this.$moveGapY) > 10 || Math.abs(this.$moveGapX) > 10) {
+				this.isSrcoll = true
+			}
+			if(this.offsetY > (this.opts.minScrollY + this.opts.bounceTop)) {
+				this.offsetY = this.opts.minScrollY + this.opts.bounceTop
+			}
+			if(Math.abs(this.offsetY + this.opts.bounceBottom) > Math.abs(this.opts.maxScrollY)) {
+				this.offsetY = this.opts.maxScrollY + this.opts.bounceBottom
+			}
+			if(!this.isMove) {
+				if(this.opts.isScrollY) {
+					this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier())
+					if(Math.abs(this.$moveGapY < 160)) {
+						this.setStyle(this.container, "transitionDuration", '100ms')
+					} else {
+						this.setStyle(this.container, "transitionDuration", '200ms')
+					}
+					this.translateY(this.offsetY)
+				}
+			} else {
+				this.move.push({offsetY: this.offsetY})
+			}
+			this.opts.touchMove(e, this)
+			if((this.$touchMoveTime - this.$touchStartTime) > 300) {
+				this.startY = this.offsetY
+				this.startX = this.offsetX
+			}
+			this.isMove = true
+		},
+		endFn: function(e) {
+			this.isStart = false
+			this.$touchEndTime = _getTime()
+			var duration = this.$touchEndTime - this.$touchStartTime
+			this.$touchEndPageY = this.eventTypes.hasTouch ? e.changedTouches[0].pageY : e.pageY
+			this.$touchEndPageX = this.eventTypes.hasTouch ? e.changedTouches[0].pageY : e.pageX
+			if(this.offsetY > this.opts.minScrollY) {
+				this.offsetY = this.opts.minScrollY
+			}
+			if(Math.abs(this.offsetY) > Math.abs(this.opts.maxScrollY)) {
+				this.offsetY = this.opts.maxScrollY
+			}
+			if(this.opts.isMoment && duration < 300) {
+				if(this.opts.isScrollY) {
+					var momentumY = _addDistination.call(this, this.offsetY, this.startY, duration, this.opts.deceleration)
+					var offsetY = momentumY.destination;
+					var time = momentumY.duration;
+					this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier())
+					this.setStyle(this.container, "transitionDuration", time + 'ms')
+					if(Math.abs(offsetY) > Math.abs(this.opts.maxScrollY)) {
+						offsetY = this.opts.maxScrollY
+					}
+					if(offsetY > this.opts.minScrollY && offsetY >= 0) {
+						offsetY = this.opts.minScrollY
+					}
+					this.offsetY = offsetY
+					if(this.isMove) {
+						this.move.push({offsetY: this.offsetY})
+					} else {
+						this.translateY(this.offsetY)
+					}
+
+				}
+			}
+			this.opts.touchEnd(e, this)
+		},
+		transitionEnd: function(e) {
+			this.isMove = false
+			if(this.move.length) {
+				var offsetY = this.move.pop().offsetY
+				this.move = []
+				this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier)
+				this.setStyle(this.container, "transitionDuration", '1000ms')
+				if(offsetY > this.opts.minScrollY) {
+					offsetY = this.opts.minScrollY
+				}
+				if(Math.abs(offsetY) > Math.abs(this.opts.maxScrollY)) {
+					offsetY = this.opts.maxScrollY
+				}
+				this.translateY(offsetY)
+		   }
 		},
 		bindEvent: function() {
-			//绑定touchstart事件
-			this.touchStartCallback = function(e) {
-
-				this.move = []
-				this.isMove = false
-				this.$touchStartTime = _getTime()
-				this.isSrcoll = false
-				this.isMove = false
-				this.isStart = true
-				this.$touchStartPageY = this.$initPointY = this.eventTypes.hasTouch ? e.touches[0].pageY : e.pageY
-				this.$touchStartPageX = this.$initPointX = this.eventTypes.hasTouch ? e.touches[0].pageY : e.pageX
-				this.initPointY = this.$touchStartPageY
-				this.initPointX = this.$touchStartPageX
-				this.startX = this.offsetX
-				this.startY = this.offsetY
-				this.opts.touchStart(e, this)
-			}.bind(this)
 
 			_addEvent(this.container, this.eventTypes.startEvt , this.touchStartCallback, false)
 			//绑定touchmove
-			this.touchMoveCallback = function(e) {
-				if(this.opts.isPreventDefault) {
-					e.preventDefault()
-				}
-				this.$touchMoveTime = _getTime()
-				this.startMoveGapTime = this.$touchMoveTime - this.$touchStartTime
-				this.$touchMovePageY = this.eventTypes.hasTouch ? e.touches[0].pageY : e.pageY
-				this.$touchMovePageX = this.eventTypes.hasTouch ? e.touches[0].pageY : e.pageX
-				this.$moveGapY = parseInt(this.$touchMovePageY - this.$touchStartPageY)
-				this.$moveGapX = parseInt(this.$touchMovePageX - this.$touchStartPageX)
-				this.$touchStartPageY = this.$touchMovePageY
-				this.$touchStartPageX = this.$touchMovePageX
-				if(isNaN(this.$moveGapY) || isNaN(this.$moveGapX) || !this.isStart) {
-					return false
-				}
-				this.offsetY += this.$moveGapY
-				this.offsetX += this.$moveGapX
-
-				if(Math.abs(this.$moveGapY) > 10 || Math.abs(this.$moveGapX) > 10) {
-					this.isSrcoll = true
-				}
-				if(this.offsetY > (this.opts.minScrollY + this.opts.bounceTop)) {
-					this.offsetY = this.opts.minScrollY + this.opts.bounceTop
-				}
-				if(Math.abs(this.offsetY + this.opts.bounceBottom) > Math.abs(this.opts.maxScrollY)) {
-					this.offsetY = this.opts.maxScrollY + this.opts.bounceBottom
-				}
-				if(!this.isMove) {
-					if(this.opts.isScrollY) {
-						this.setStyle(this.container,"transitionTimingFunction", 'linear')
-						this.setStyle(this.container, "transitionDuration", '150ms')
-						this.translateY(this.offsetY)
-					}
-				} else {
-					this.move.push({offsetY: this.offsetY})
-				}
-				this.opts.touchMove(e, this)
-				if((this.$touchMoveTime - this.$touchStartTime) > 300) {
-					this.startY = this.offsetY
-					this.startX = this.offsetX
-				}
-				this.isMove = true
-			}.bind(this)
 			_addEvent(this.opts.target, this.eventTypes.moveEvt, this.touchMoveCallback, false)
 			//绑定touchend
-			this.touchEndCallback = function(e) {
-
-				this.isStart = false
-				this.$touchEndTime = _getTime()
-				var duration = this.$touchEndTime - this.$touchStartTime
-				this.$touchEndPageY = this.eventTypes.hasTouch ? e.changedTouches[0].pageY : e.pageY
-				this.$touchEndPageX = this.eventTypes.hasTouch ? e.changedTouches[0].pageY : e.pageX
-				if(this.offsetY > this.opts.minScrollY) {
-					this.offsetY = this.opts.minScrollY
-				}
-				if(Math.abs(this.offsetY) > Math.abs(this.opts.maxScrollY)) {
-					this.offsetY = this.opts.maxScrollY
-				}
-				if(this.opts.isMoment && duration < 300) {
-					if(this.opts.isScrollY) {
-						var momentumY = _addDistination(this.offsetY, this.startY,(this.$touchEndPageY - this.initPointY), duration, this.opts.maxScrollY, this.wrapperHeight, this.opts.deceleration)
-						var offsetY = momentumY.destination;
-						var time = momentumY.duration;
-						this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier())
-						this.setStyle(this.container, "transitionDuration", time + 'ms')
-						if(Math.abs(offsetY) > Math.abs(this.opts.maxScrollY)) {
-							offsetY = this.opts.maxScrollY
-
-						}
-						if(offsetY > this.opts.minScrollY && offsetY >= 0) {
-							offsetY = this.opts.minScrollY
-						}
-
-						this.offsetY = offsetY
-						if(this.isMove) {
-							this.move.push({offsetY: this.offsetY})
-						} else {
-							this.translateY(this.offsetY)
-						}
-
-					}
-				}
-				this.opts.touchEnd(e, this)
-			}.bind(this)
 			_addEvent(this.opts.target, this.eventTypes.endEvt, this.touchEndCallback, false)
 			if(!this.eventTypes.hasTouch) {
 				_addEvent(this.container, 'mouseleave', function(e) {
 					this.isStart = false
 				}.bind(this), false)
 			}
+
+
 		},
 		refresh: function() {
 			this.containerHeight = this.container.offsetHeight
