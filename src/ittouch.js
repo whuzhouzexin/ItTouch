@@ -93,9 +93,9 @@
     	if(!_isHtmlNode(dom)) {
     		dom = querySelector('body')
     	}
-		var fn = _once(callback)
-    	_addEvent(dom, TRANSITION_END_EVENT, function(e) {
 
+    	_addEvent(dom, TRANSITION_END_EVENT, function(e) {
+			var fn = _once(callback)
     		fn(e)
     	}, false)
     }
@@ -120,9 +120,7 @@
     }
 	//绑定事件
 	function _addEvent(dom, type ,callback, isCancerBuble) {
-		if(!_isHtmlNode(dom)) {
-			return false
-		}
+
 		if(!_isString(type)) {
 			return false
 		}
@@ -186,7 +184,7 @@
 
 	function _getCubicBezier() {
 
-		return 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+		return 'linear'
 	}
 
 	/**
@@ -262,7 +260,8 @@
 				bounceTop: 30,
 				bounceBottom: -30,
 				deceleration: 0.0016,
-				isMoment: true
+				isMoment: true,
+				target: global
 			}
 			this.opts = this.extend(defaultOpts, opts)
 			this.eventTypes = _getTouchEventTypes()
@@ -284,6 +283,15 @@
 			_bindTransitionEnd(this.container, function() {
 				this.isMove = false
 				this.setStyle(this.container, "transitionDuration", '0ms')
+				if(this.move.length) {
+					console.log(this.move);
+					var offsetY = this.move.pop().offsetY
+					this.move = []
+					console.log(offsetY);
+					this.setStyle(this.container,"transitionTimingFunction", "linear")
+					this.setStyle(this.container, "transitionDuration", '100ms')
+					this.translateY(offsetY)
+				}
 			}.bind(this))
 			this.wrapperHeight = _getRect(this.container.parentNode).height
 			this.opts.maxScrollY = this.opts.maxScrollY ? this.opts.maxScrollY : (this.wrapperHeight - this.containerHeight)
@@ -291,10 +299,9 @@
 		bindEvent: function() {
 			//绑定touchstart事件
 			this.touchStartCallback = function(e) {
-				if(this.opts.isPreventDefault) {
-					e.preventDefault()
-				}
 
+				this.move = []
+				this.isMove = false
 				this.$touchStartTime = _getTime()
 				this.isSrcoll = false
 				this.isMove = false
@@ -311,7 +318,9 @@
 			_addEvent(this.container, this.eventTypes.startEvt , this.touchStartCallback, false)
 			//绑定touchmove
 			this.touchMoveCallback = function(e) {
-
+				if(this.opts.isPreventDefault) {
+					e.preventDefault()
+				}
 				this.$touchMoveTime = _getTime()
 				this.startMoveGapTime = this.$touchMoveTime - this.$touchStartTime
 				this.$touchMovePageY = this.eventTypes.hasTouch ? e.touches[0].pageY : e.pageY
@@ -335,10 +344,14 @@
 				if(Math.abs(this.offsetY + this.opts.bounceBottom) > Math.abs(this.opts.maxScrollY)) {
 					this.offsetY = this.opts.maxScrollY + this.opts.bounceBottom
 				}
-				if(this.opts.isScrollY) {
-					this.setStyle(this.container,"transitionTimingFunction", 'linear')
-					this.setStyle(this.container, "transitionDuration", '0ms')
-					this.translateY(this.offsetY)
+				if(!this.isMove) {
+					if(this.opts.isScrollY) {
+						this.setStyle(this.container,"transitionTimingFunction", 'linear')
+						this.setStyle(this.container, "transitionDuration", '150ms')
+						this.translateY(this.offsetY)
+					}
+				} else {
+					this.move.push({offsetY: this.offsetY})
 				}
 				this.opts.touchMove(e, this)
 				if((this.$touchMoveTime - this.$touchStartTime) > 300) {
@@ -347,7 +360,7 @@
 				}
 				this.isMove = true
 			}.bind(this)
-			_addEvent(this.container, this.eventTypes.moveEvt, this.touchMoveCallback, false)
+			_addEvent(this.opts.target, this.eventTypes.moveEvt, this.touchMoveCallback, false)
 			//绑定touchend
 			this.touchEndCallback = function(e) {
 
@@ -356,20 +369,11 @@
 				var duration = this.$touchEndTime - this.$touchStartTime
 				this.$touchEndPageY = this.eventTypes.hasTouch ? e.changedTouches[0].pageY : e.pageY
 				this.$touchEndPageX = this.eventTypes.hasTouch ? e.changedTouches[0].pageY : e.pageX
-				this.$endGapY = this.$touchEndPageY - this.$touchMovePageY
-				this.$endGapX = this.$touchEndPageX - this.$touchMovePageX
-				this.offsetY += this.$endGapY
-				this.offsetX += this.$endGapX
 				if(this.offsetY > this.opts.minScrollY) {
 					this.offsetY = this.opts.minScrollY
 				}
 				if(Math.abs(this.offsetY) > Math.abs(this.opts.maxScrollY)) {
 					this.offsetY = this.opts.maxScrollY
-				}
-				if(this.opts.isScrollY) {
-					this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier())
-					this.setStyle(this.container, "transitionDuration", Math.abs(this.$moveGapY) + 'ms')
-					this.translateY(this.offsetY)
 				}
 				if(this.opts.isMoment && duration < 300) {
 					if(this.opts.isScrollY) {
@@ -387,12 +391,17 @@
 						}
 
 						this.offsetY = offsetY
-						this.translateY(this.offsetY)
+						if(this.isMove) {
+							this.move.push({offsetY: this.offsetY})
+						} else {
+							this.translateY(this.offsetY)
+						}
+
 					}
 				}
 				this.opts.touchEnd(e, this)
 			}.bind(this)
-			_addEvent(this.container, this.eventTypes.endEvt, this.touchEndCallback, false)
+			_addEvent(this.opts.target, this.eventTypes.endEvt, this.touchEndCallback, false)
 			if(!this.eventTypes.hasTouch) {
 				_addEvent(this.container, 'mouseleave', function(e) {
 					this.isStart = false
