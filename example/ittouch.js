@@ -45,6 +45,27 @@
 	        };
 	    }
 	}());
+	var _ease = {
+		quadratic: {
+			style: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+			fn: function (k) {
+				return k * ( 2 - k );
+			}
+		},
+		circular: {
+			style: 'cubic-bezier(0.1, 0.57, 0.1, 1)',	// Not properly "circular" but this looks better, it should be (0.075, 0.82, 0.165, 1)
+			fn: function (k) {
+				return Math.sqrt( 1 - ( --k * k ) );
+			}
+		},
+		back: {
+			style: 'cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+			fn: function (k) {
+				var b = 4;
+				return ( k = k - 1 ) * k * ( ( b + 1 ) * k + b ) + 1;
+			}
+		}
+	}
 	//是不是dom元素
 	function _isHtmlNode(node) {
 		return node && node.nodeType === 1 && node.onclick !== undefined
@@ -119,18 +140,6 @@
     		}
     	}
     }
-    function _bindTransitionEnd(dom, callback) {
-    	if(!_isHtmlNode(dom)) {
-    		dom = querySelector('body')
-    	}
-
-    	_addEvent(dom, TRANSITION_END_EVENT, function(e) {
-			if(this.container != e.target) {
-				return false
-			}
-			callback()
-    	}.bind(this), true)
-    }
 	//判断是不是方法
 	function _isFunction(func) {
 		return typeof func === 'function'
@@ -153,36 +162,17 @@
 	//绑定事件
 	function _addEvent(dom, type ,callback, isCancerBuble) {
 
-		if(!_isString(type)) {
-			return false
-		}
-		if(!_isFunction(callback)) {
-			callback = _noop
-		}
-		if(!_isBoolean(isCancerBuble)) {
-			isCancerBuble = false
-		}
 		if(dom.addEventListener) {
-			return dom.addEventListener(type, callback, isCancerBuble)
+			return dom.addEventListener(type, callback, !!isCancerBuble)
 		} else if(dom.attachEvent) {
 			return dom.attachEvent("on" + type, callback)
 		}
 		return dom['on' + type] = callback
 	}
 	function _removeEvent(dom, type ,callback, isCancerBuble) {
-
-		if(!_isString(type)) {
-			return false
-		}
-		if(!_isFunction(callback)) {
-			callback = _noop
-		}
-		if(!_isBoolean(isCancerBuble)) {
-			isCancerBuble = false
-		}
 		if(dom.removeEventListener) {
 
-			return dom.removeEventListener(type, callback, isCancerBuble)
+			return dom.removeEventListener(type, callback, !!isCancerBuble)
 		} else if(dom.detachEvent) {
 			return dom.detachEvent("on" + type, callback)
 		}
@@ -212,10 +202,9 @@
 
 
 
-	function _getCubicBezier() {
-		return 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+	function _getCubicBezier(type) {
+		return (_ease[type] && _ease[type].style) || 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
 	}
-
 	/**
      * @param {String} selector
      * @private
@@ -295,7 +284,8 @@
 				bounceBottom: -30,
 				deceleration: 0.0006,
 				isMoment: true,
-				target: global
+				target: global,
+				ease: 'quadratic'
 			}
 			this.opts = this.extend(defaultOpts, opts)
 			this.eventTypes = _getTouchEventTypes()
@@ -319,14 +309,9 @@
 	        this.springMaxRegion = this.opts.springMaxRegion || 60
 			this.wrapperHeight = _getRect(this.container.parentNode).height
 			this.opts.maxScrollY = this.opts.maxScrollY ? this.opts.maxScrollY : (this.wrapperHeight - this.containerHeight)
-			this.touchStartCallback = this.startFn.bind(this)
-			this.touchMoveCallback = this.moveFn.bind(this)
-			this.touchEndCallback = this.endFn.bind(this)
-			this.transitionEndCallback = this.transitionEnd.bind(this)
-			_bindTransitionEnd.call(this, this.container, this.transitionEndCallback)
 		},
 		startFn: function(e) {
-			e.stopPropagation()
+
 			this.isMove = false
 			this.$touchStartTime = _getTime()
 			this.isSrcoll = false
@@ -370,7 +355,7 @@
 			}
 			if(!this.isMove) {
 				if(this.opts.isScrollY) {
-					this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier())
+					this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier(this.opts.ease))
 					if(Math.abs(this.$moveGapY < 160)) {
 						this.setStyle(this.container, "transitionDuration", '100ms')
 					} else {
@@ -381,11 +366,11 @@
 			} else {
 				this.move.push({offsetY: this.offsetY})
 			}
-			this.opts.touchMove(e, this)
 			if((this.$touchMoveTime - this.$touchStartTime) > 300) {
 				this.startY = this.offsetY
 				this.startX = this.offsetX
 			}
+			this.opts.touchMove(e, this)
 			this.isMove = true
 		},
 		endFn: function(e) {
@@ -394,18 +379,12 @@
 			var duration = this.$touchEndTime - this.$touchStartTime
 			this.$touchEndPageY = this.eventTypes.hasTouch ? e.changedTouches[0].pageY : e.pageY
 			this.$touchEndPageX = this.eventTypes.hasTouch ? e.changedTouches[0].pageY : e.pageX
-			if(this.offsetY > this.opts.minScrollY) {
-				this.offsetY = this.opts.minScrollY
-			}
-			if(Math.abs(this.offsetY) > Math.abs(this.opts.maxScrollY)) {
-				this.offsetY = this.opts.maxScrollY
-			}
 			if(this.opts.isMoment && duration < 300) {
 				if(this.opts.isScrollY) {
 					var momentumY = _addDistination.call(this, this.offsetY, this.startY, duration, this.opts.deceleration)
 					var offsetY = momentumY.destination;
 					var time = momentumY.duration;
-					this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier())
+					this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier(this.opts.ease))
 					this.setStyle(this.container, "transitionDuration", time + 'ms')
 					if(Math.abs(offsetY) > Math.abs(this.opts.maxScrollY)) {
 						offsetY = this.opts.maxScrollY
@@ -425,11 +404,12 @@
 			this.opts.touchEnd(e, this)
 		},
 		transitionEnd: function(e) {
+
 			this.isMove = false
 			if(this.move.length) {
 				var offsetY = this.move.pop().offsetY
 				this.move = []
-				this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier)
+				this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier(this.opts.ease))
 				this.setStyle(this.container, "transitionDuration", '1000ms')
 				if(offsetY > this.opts.minScrollY) {
 					offsetY = this.opts.minScrollY
@@ -442,18 +422,18 @@
 		},
 		bindEvent: function() {
 
-			_addEvent(this.container, this.eventTypes.startEvt , this.touchStartCallback, false)
+			_addEvent(this.container, this.eventTypes.startEvt , this, false)
 			//绑定touchmove
-			_addEvent(this.opts.target, this.eventTypes.moveEvt, this.touchMoveCallback, false)
+			_addEvent(this.opts.target, this.eventTypes.moveEvt, this, false)
 			//绑定touchend
-			_addEvent(this.opts.target, this.eventTypes.endEvt, this.touchEndCallback, false)
+			_addEvent(this.opts.target, this.eventTypes.endEvt, this, false)
 			if(!this.eventTypes.hasTouch) {
-				_addEvent(this.container, 'mouseleave', function(e) {
-					this.isStart = false
-				}.bind(this), false)
+				_addEvent(this.container, 'mouseleave', this, false)
 			}
-
-
+			_addEvent(this.container, TRANSITION_END_EVENT, this)
+		},
+		moveLeave: function(e) {
+			this.isStart = false
 		},
 		refresh: function() {
 			this.containerHeight = this.container.offsetHeight
@@ -463,12 +443,78 @@
 		scrollTo: function(x, y) {
 			this.translate(x, y)
 		},
+		addEase: function(obj) {
+			extend(_ease, obj)
+		},
+		handleEvent: function(e) {
+			
+			switch ( e.type ) {
+				case 'touchstart':
+				case 'mousedown':
+					this.startFn(e);
+					break;
+				case 'touchmove':
+				case 'mousemove':
+					this.moveFn(e);
+					break;
+				case 'touchend':
+				case 'mouseup':
+				case 'touchcancel':
+				case 'mousecancel':
+					this.endFn(e);
+					break;
+			    case 'touchend':
+			    case 'leave':
+					this.mouseleave(e);
+					break;
+				case TRANSITION_END_EVENT:
+					if(e.target != this.container) {
+						return false
+					}
+					this.transitionEnd(e)
+					break;
+				default:
+					break;
+			}
+		},
+		_animate: function (destX, destY, duration, easingFn) {
+			var that = this,
+				startX = this.offsetX,
+				startY = this.offsetY,
+				startTime = _getTime(),
+				destTime = startTime + duration;
+
+			function step () {
+				var now = _getTime(),
+					newX, newY,
+					easing;
+
+				if ( now >= destTime ) {
+					that.isAnimating = false;
+					that.translate(destX, destY);
+					return;
+				}
+
+				now = ( now - startTime ) / duration;
+				easing = easingFn(now);
+				newX = ( destX - startX ) * easing + startX;
+				newY = ( destY - startY ) * easing + startY;
+				that.translate(newX, newY);
+
+				if ( that.isAnimating ) {
+					requestAnimationFrame(step);
+				}
+			}
+
+			this.isAnimating = true;
+			step();
+		},
 		destory: function() {
 			BROWSER_PREFIX = undefined
 			TRANSITION_END_EVENT = undefined
-			this.removeEvent(this.container, this.eventTypes.startEvt, this.touchStartCallback)
-			this.removeEvent(this.container, this.eventTypes.moveEvt, this.touchMoveCallback)
-			this.removeEvent(this.container, this.eventTypes.endEvt, this.touchEndCallback)
+			this.removeEvent(this.container, this.eventTypes.startEvt, this)
+			this.removeEvent(this.container, this.eventTypes.moveEvt, this)
+			this.removeEvent(this.container, this.eventTypes.endEvt, this)
 			for(var key in this) {
 				try {
 					if(this.hasOwnProperty(key)) {
