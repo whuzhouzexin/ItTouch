@@ -236,7 +236,7 @@
 		var deceleration = deceleration === undefined ? 0.0006 : deceleration;
 
 		destination = current + ( speed * speed ) / ( 2 * deceleration ) * ( distance < 0 ? -1 : 1 );
-		duration = Math.round(speed / self.deceleration) * tRatio;
+		duration = Math.round(speed / deceleration) * tRatio;
 		if (destination < this.opts.maxScrollY ) {
 			if (destination < this.opts.maxScrollY - this.maxRegion) {
 				tRatio = reverseEase((current - this.opts.maxScrollY + this.springMaxRegion) / (current - destination));
@@ -254,7 +254,7 @@
 				destination = this.opts.minScrollY + this.springMaxRegion * (destination - this.opts.minScrollY) / this.maxRegion;
 			}
 		}
-		var duration = Math.round(speed / self.deceleration) * tRatio;
+
 		return {
 			destination: Math.round(destination),
 			duration: duration
@@ -323,6 +323,7 @@
 			this.initPointX = this.$touchStartPageX
 			this.startX = this.offsetX
 			this.startY = this.offsetY
+
 			this.opts.touchStart(e, this)
 		},
 		moveFn: function(e) {
@@ -353,28 +354,24 @@
 			if(Math.abs(this.offsetY + this.opts.bounceBottom) > Math.abs(this.opts.maxScrollY)) {
 				this.offsetY = this.opts.maxScrollY + this.opts.bounceBottom
 			}
-			if(!this.isMove) {
-				if(this.opts.isScrollY) {
-					this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier(this.opts.ease))
-					if(Math.abs(this.$moveGapY < 160)) {
-						this.setStyle(this.container, "transitionDuration", '100ms')
-					} else {
-						this.setStyle(this.container, "transitionDuration", '200ms')
-					}
-					this.translateY(this.offsetY)
-				}
-			} else {
+			this.setStyle(this.container, 'transitionDuration', '1ms')
+			this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier(this.opts.ease))
+			if(this.isMove) {
 				this.move.push({offsetY: this.offsetY})
+			} else {
+				this.translateY(this.offsetY)
 			}
 			if((this.$touchMoveTime - this.$touchStartTime) > 300) {
 				this.startY = this.offsetY
 				this.startX = this.offsetX
 			}
+			this.translateY(this.offsetY)
 			this.opts.touchMove(e, this)
 			this.isMove = true
 		},
 		endFn: function(e) {
 			this.isStart = false
+			this.isMove = false
 			this.$touchEndTime = _getTime()
 			var duration = this.$touchEndTime - this.$touchStartTime
 			this.$touchEndPageY = this.eventTypes.hasTouch ? e.changedTouches[0].pageY : e.pageY
@@ -384,6 +381,9 @@
 					var momentumY = _addDistination.call(this, this.offsetY, this.startY, duration, this.opts.deceleration)
 					var offsetY = momentumY.destination;
 					var time = momentumY.duration;
+					if(time > 2000) {
+						time = 1500
+					}
 					this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier(this.opts.ease))
 					this.setStyle(this.container, "transitionDuration", time + 'ms')
 					if(Math.abs(offsetY) > Math.abs(this.opts.maxScrollY)) {
@@ -393,32 +393,15 @@
 						offsetY = this.opts.minScrollY
 					}
 					this.offsetY = offsetY
-					if(this.isMove) {
-						this.move.push({offsetY: this.offsetY})
-					} else {
-						this.translateY(this.offsetY)
-					}
-
+					this.translateY(this.offsetY)
 				}
 			}
 			this.opts.touchEnd(e, this)
 		},
 		transitionEnd: function(e) {
-
+			e.stopPropagation()
 			this.isMove = false
-			if(this.move.length) {
-				var offsetY = this.move.pop().offsetY
-				this.move = []
-				this.setStyle(this.container,"transitionTimingFunction", _getCubicBezier(this.opts.ease))
-				this.setStyle(this.container, "transitionDuration", '1000ms')
-				if(offsetY > this.opts.minScrollY) {
-					offsetY = this.opts.minScrollY
-				}
-				if(Math.abs(offsetY) > Math.abs(this.opts.maxScrollY)) {
-					offsetY = this.opts.maxScrollY
-				}
-				this.translateY(offsetY)
-		   }
+			this.setStyle(this.container, 'transitionDuration', '0ms')
 		},
 		bindEvent: function() {
 
@@ -447,7 +430,7 @@
 			extend(_ease, obj)
 		},
 		handleEvent: function(e) {
-			
+
 			switch ( e.type ) {
 				case 'touchstart':
 				case 'mousedown':
